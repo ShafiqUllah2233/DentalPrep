@@ -13,10 +13,21 @@
     const meta = document.querySelector("meta[name='dentalprep-api']");
     const metaValue = meta ? meta.getAttribute("content") : null;
 
+    const storedApi = localStorage.getItem("dentalprep_api");
+    if (storedApi) {
+      try {
+        const storedOrigin = new URL(storedApi).origin;
+        if (storedOrigin === window.location.origin || isLocalhost) {
+          return storedApi.replace(/\/$/, "");
+        }
+      } catch (_err) {
+        // Ignore invalid stored API URLs.
+      }
+    }
+
     return (
       window.DENTALPREP_API_URL ||
       metaValue ||
-      localStorage.getItem("dentalprep_api") ||
       DEFAULT_API_BASE
     );
   }

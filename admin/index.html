@@ -4,6 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>DentalPrep - Admin Dashboard</title>
     <link rel="stylesheet" href="../static/css/DAstyles.css">
     <link rel="stylesheet" href="../static/css/style.css">
@@ -599,7 +602,7 @@ Scenario: ..."></textarea>
                     </span>
                 </div>
                 <span style="color: rgba(255,255,255,0.3);">|</span>
-                <span style="color: rgba(255,255,255,0.7); font-size: 0.9rem;">Admin Console v2.0</span>
+                <span style="color: rgba(255,255,255,0.7); font-size: 0.9rem;">Admin Console v2.1</span>
             </div>
 
             <div style="color: rgba(255,255,255,0.5); font-size: 0.85rem;">
@@ -615,7 +618,21 @@ Scenario: ..."></textarea>
         // --- Admin Application Logic ---
 
         const { getApiBase } = window.DentalPrepApi || {};
-        const API_BASE = getApiBase ? getApiBase() : "http://localhost:4000/api";
+        const ADMIN_APP_VERSION = "2.1.0";
+
+        function getAdminApiBase() {
+            const isLocalhost = window.location.hostname === "localhost" ||
+                window.location.hostname === "127.0.0.1";
+
+            if (isLocalhost) {
+                return getApiBase ? getApiBase() : "http://localhost:4000/api";
+            }
+
+            // On Render/production always use same-origin API (ignore stale localhost overrides in localStorage).
+            return `${window.location.origin.replace(/\/$/, "")}/api`;
+        }
+
+        const API_BASE = getAdminApiBase();
         let adminToken = localStorage.getItem("dentalprep_admin_token");
         let academyBlocks = [];
 
