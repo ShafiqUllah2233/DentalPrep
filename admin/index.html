@@ -1675,24 +1675,54 @@ Scenario: ..."></textarea>
                 const standard = {
                     "block-a": ["Foundation", "Blood"],
                     "block-b": ["Craniofacial"],
-                    "block-c": ["Cervicofacial", "GIT + UGS", "Cardiopulmonary"]
+                    "block-c": ["Cervicofacial", "UGS + GIT", "Cardiopulmonary"]
                 };
                 const biochemistry = {
                     "block-a": ["Foundation"],
                     "block-b": ["Craniofacial"],
-                    "block-c": ["Cervicofacial", "GIT + UGS", "Cardiopulmonary"]
+                    "block-c": ["Cervicofacial", "UGS + GIT", "Cardiopulmonary"]
                 };
                 return (subjectKey === "biochemistry" ? biochemistry : standard)[blockKey] || [];
             };
 
-            const topics = selected && Array.isArray(selected.topics) && selected.topics.length
-                ? selected.topics
-                : getDefaultTopics(subjectSelect.value, blockSelect.value);
+            const mergeTopicLists = (...lists) => {
+                const seen = new Set();
+                const merged = [];
+                lists.flat().forEach((topic) => {
+                    const normalized = String(topic || "").trim();
+                    if (!normalized) return;
+                    const key = normalized.toLowerCase();
+                    if (seen.has(key)) return;
+                    seen.add(key);
+                    merged.push(normalized);
+                });
+                return merged;
+            };
+
+            const topicHasContent = (section) => {
+                if (!section || typeof section !== "object") return false;
+                const hasVideos = Array.isArray(section.videoItems) && section.videoItems.length > 0;
+                const hasNotes = Boolean(String(section.noteText || "").trim()) ||
+                    (Array.isArray(section.noteResources) && section.noteResources.length > 0);
+                const hasClinical = Boolean(String(section.clinicalText || "").trim()) ||
+                    (Array.isArray(section.clinicalResources) && section.clinicalResources.length > 0);
+                return hasVideos || hasNotes || hasClinical;
+            };
+
+            const blockSections = selected && Array.isArray(selected.sections) ? selected.sections : [];
+            const topics = mergeTopicLists(
+                getDefaultTopics(subjectSelect.value, blockSelect.value),
+                selected && Array.isArray(selected.topics) ? selected.topics : []
+            );
 
             if (topicSelect) {
                 const previous = topicSelect.value;
                 topicSelect.innerHTML = topics.length
-                    ? topics.map((topic) => `<option value="${topic}">${topic}</option>`).join("")
+                    ? topics.map((topic) => {
+                        const section = blockSections.find((item) => String(item.name || "").trim() === topic);
+                        const label = topicHasContent(section) ? `${topic} (Uploaded)` : topic;
+                        return `<option value="${escapeHtml(topic)}">${escapeHtml(label)}</option>`;
+                    }).join("")
                     : '<option value="">No topics available</option>';
                 if (topics.includes(previous)) {
                     topicSelect.value = previous;

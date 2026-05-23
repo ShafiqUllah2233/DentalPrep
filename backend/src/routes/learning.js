@@ -12,6 +12,30 @@ function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function mergeUniqueTopics(...valueGroups) {
+  const seen = new Set();
+  const merged = [];
+
+  const add = (value) => {
+    const normalized = String(value || "").trim();
+    if (!normalized) {
+      return;
+    }
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    merged.push(normalized);
+  };
+
+  valueGroups.forEach((group) => {
+    (Array.isArray(group) ? group : [group]).forEach(add);
+  });
+
+  return merged;
+}
+
 const SUBJECT_CONFIG = {
   anatomy: { title: "Anatomy", intro: "Understand structural concepts through a block-based progression." },
   physiology: { title: "Physiology", intro: "Build functional understanding with focused block practice." },
@@ -120,10 +144,12 @@ async function getSubjectBlocks(subjectKey) {
 
   return Object.values(DEFAULT_BLOCKS).map((defaultBlock) => {
     const saved = rowLookup[defaultBlock.blockKey] || {};
-    const topics = normalizeArray(saved.topics).length ? normalizeArray(saved.topics) : defaultBlock.topics;
+    const topics = mergeUniqueTopics(defaultBlock.topics, normalizeArray(saved.topics));
     
     const sections = topics.map((topicName) => {
-      const sectionData = (saved.sections || []).find(s => s.name === topicName);
+      const sectionData = (saved.sections || []).find(
+        (s) => String(s.name || "").trim().toLowerCase() === String(topicName || "").trim().toLowerCase()
+      );
       if (sectionData) {
         return {
           name: topicName,

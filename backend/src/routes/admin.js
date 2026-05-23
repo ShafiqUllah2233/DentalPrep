@@ -228,7 +228,7 @@ function sanitizeLinks(value) {
     .filter(Boolean);
 }
 
-function mergeUniqueStrings(existingValues, incomingValues) {
+function mergeUniqueStrings(...valueGroups) {
   const seen = new Set();
   const merged = [];
 
@@ -245,10 +245,48 @@ function mergeUniqueStrings(existingValues, incomingValues) {
     merged.push(normalized);
   };
 
-  (Array.isArray(existingValues) ? existingValues : []).forEach(add);
-  (Array.isArray(incomingValues) ? incomingValues : []).forEach(add);
+  valueGroups.forEach((group) => {
+    (Array.isArray(group) ? group : [group]).forEach(add);
+  });
 
   return merged;
+}
+
+const DEFAULT_BLOCK_TOPICS = {
+  "block-a": ["Foundation", "Blood"],
+  "block-b": ["Craniofacial"],
+  "block-c": ["Cervicofacial", "UGS + GIT", "Cardiopulmonary"]
+};
+
+const BIOCHEMISTRY_BLOCK_TOPICS = {
+  "block-a": ["Foundation"],
+  "block-b": ["Craniofacial"],
+  "block-c": ["Cervicofacial", "UGS + GIT", "Cardiopulmonary"]
+};
+
+function getDefaultBlockTopics(subjectKey, blockKey) {
+  const normalizedBlockKey = String(blockKey || "").trim().toLowerCase();
+  const map = String(subjectKey || "").trim().toLowerCase() === "biochemistry"
+    ? BIOCHEMISTRY_BLOCK_TOPICS
+    : DEFAULT_BLOCK_TOPICS;
+  return Array.isArray(map[normalizedBlockKey]) ? [...map[normalizedBlockKey]] : [];
+}
+
+function buildSectionsForTopics(topicNames, existingSections) {
+  const sections = Array.isArray(existingSections) ? existingSections : [];
+  return topicNames.map((topicName) => {
+    const existing = sections.find(
+      (section) => String(section?.name || "").trim().toLowerCase() === String(topicName || "").trim().toLowerCase()
+    );
+    return existing || {
+      name: topicName,
+      videoItems: [],
+      noteText: "",
+      noteResources: [],
+      clinicalText: "",
+      clinicalResources: []
+    };
+  });
 }
 
 function normalizeBiochemistryTopics(blockKey, topics) {
@@ -1100,27 +1138,17 @@ router.get("/admin/academy/content", adminAuth, async (_req, res) => {
     const blocks = blocksRaw.map((row) => {
       const doc = row && typeof row.toObject === "function" ? row.toObject() : row;
       const subjectKey = String(doc?.subjectKey || "").trim().toLowerCase();
-      if (subjectKey !== "biochemistry") {
-        return doc;
+      const blockKey = String(doc?.blockKey || "").trim().toLowerCase();
+      const defaultTopics = getDefaultBlockTopics(subjectKey, blockKey);
+      let normalizedTopics = mergeUniqueStrings(defaultTopics, doc?.topics || []);
+      if (subjectKey === "biochemistry") {
+        normalizedTopics = normalizeBiochemistryTopics(blockKey, normalizedTopics);
       }
-
-      const normalizedTopics = normalizeBiochemistryTopics(doc?.blockKey, doc?.topics || []);
-      const normalizedSections = normalizedTopics.map((topicName) => {
-        const existing = (Array.isArray(doc?.sections) ? doc.sections : []).find((section) => String(section?.name || "").trim().toLowerCase() === String(topicName || "").trim().toLowerCase());
-        return existing || {
-          name: topicName,
-          videoItems: [],
-          noteText: "",
-          noteResources: [],
-          clinicalText: "",
-          clinicalResources: []
-        };
-      });
 
       return {
         ...doc,
         topics: normalizedTopics,
-        sections: normalizedSections
+        sections: buildSectionsForTopics(normalizedTopics, doc?.sections || [])
       };
     });
 
@@ -1237,25 +1265,14 @@ router.post(
       const next = await SubjectContent.findOneAndUpdate(
         { id },
         (() => {
+          const defaultTopics = getDefaultBlockTopics(subjectKey, blockKey);
           const mergedTopics = sectionName
-            ? mergeUniqueStrings(existing?.topics, [...topics, sectionName])
-            : mergeUniqueStrings(existing?.topics, topics);
+            ? mergeUniqueStrings(defaultTopics, existing?.topics, topics, sectionName)
+            : mergeUniqueStrings(defaultTopics, existing?.topics, topics);
           const nextTopics = subjectKey === "biochemistry"
             ? normalizeBiochemistryTopics(blockKey, mergedTopics)
             : mergedTopics;
-          const nextNormalizedSections = subjectKey === "biochemistry"
-            ? nextTopics.map((topicName) => {
-                const existingSection = nextSections.find((section) => String(section?.name || "").trim().toLowerCase() === String(topicName || "").trim().toLowerCase());
-                return existingSection || {
-                  name: topicName,
-                  videoItems: [],
-                  noteText: "",
-                  noteResources: [],
-                  clinicalText: "",
-                  clinicalResources: []
-                };
-              })
-            : nextSections;
+          const nextNormalizedSections = buildSectionsForTopics(nextTopics, nextSections);
 
           return {
           id,
