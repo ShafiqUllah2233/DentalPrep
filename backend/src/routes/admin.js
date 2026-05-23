@@ -81,6 +81,60 @@ function parseTagList(value) {
   return Array.from(new Set(splitValues(value)));
 }
 
+function normalizeTagList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return parseTagList(value);
+  }
+  return [];
+}
+
+function resolveCourseId(course) {
+  const doc = course && typeof course.toObject === "function" ? course.toObject() : course;
+  return String(doc?.courseId || doc?.id || doc?._id || "").trim();
+}
+
+function resolveLessonId(lesson) {
+  const doc = lesson && typeof lesson.toObject === "function" ? lesson.toObject() : lesson;
+  return String(doc?.lessonId || doc?.id || doc?._id || "").trim();
+}
+
+function mapLessonForAdmin(lesson) {
+  const doc = lesson && typeof lesson.toObject === "function" ? lesson.toObject() : lesson;
+  const lessonId = resolveLessonId(doc);
+  return {
+    id: lessonId,
+    lessonId,
+    title: String(doc?.title || "").trim() || "Untitled Lesson",
+    courseId: String(doc?.courseId || "").trim(),
+    summary: String(doc?.summary || "").trim(),
+    videoUrl: String(doc?.videoUrl || "").trim(),
+    videoType: doc?.videoType || null,
+    accessLevel: doc?.accessLevel || "free",
+    audioItems: Array.isArray(doc?.audioItems) ? doc.audioItems : [],
+    materials: Array.isArray(doc?.materials) ? doc.materials : [],
+    caseStudies: Array.isArray(doc?.caseStudies) ? doc.caseStudies : [],
+    quizId: doc?.quizId || null
+  };
+}
+
+function mapCourseForAdmin(course, lessonCounts, quizCounts) {
+  const doc = course && typeof course.toObject === "function" ? course.toObject() : course;
+  const courseId = resolveCourseId(doc);
+  return {
+    id: courseId,
+    courseId,
+    title: String(doc?.title || "").trim() || "Untitled Course",
+    description: String(doc?.description || "").trim(),
+    category: String(doc?.category || "").trim(),
+    curriculumTags: normalizeTagList(doc?.curriculumTags),
+    lessonsCount: lessonCounts.get(courseId) || 0,
+    quizCount: quizCounts.get(courseId) || 0
+  };
+}
+
 function isYoutubeUrl(value) {
   return /(?:youtube\.com|youtu\.be)/i.test(String(value || ""));
 }
@@ -670,26 +724,30 @@ router.delete("/admin/course/:courseId", adminAuth, async (req, res) => {
 router.get("/admin/courses", adminAuth, async (_req, res) => {
   try {
     const courses = await Course.find({}).sort({ title: 1 });
-    const allLessons = await Lesson.find({});
-    const allQuizzes = await Quiz.find({});
-    
-    const data = courses.map((course) => {
-      const courseLessons = allLessons.filter((lesson) => lesson.courseId === course.courseId);
-      const courseQuizzes = allQuizzes.filter((quiz) => quiz.courseId === course.courseId);
-      
-      return {
-        id: course.courseId,
-        title: course.title,
-        description: course.description || "",
-        category: course.category || "",
-        curriculumTags: course.curriculumTags || [],
-        lessonsCount: courseLessons.length,
-        quizCount: courseQuizzes.length
-      };
+    const allLessons = await Lesson.find({}, { courseId: 1 }).lean();
+    const allQuizzes = await Quiz.find({}, { courseId: 1 }).lean();
+
+    const lessonCounts = new Map();
+    allLessons.forEach((lesson) => {
+      const courseId = String(lesson?.courseId || "").trim();
+      if (!courseId) return;
+      lessonCounts.set(courseId, (lessonCounts.get(courseId) || 0) + 1);
     });
-    
-    res.json({ courses: data });
-  } catch (_err) {
+
+    const quizCounts = new Map();
+    allQuizzes.forEach((quiz) => {
+      const courseId = String(quiz?.courseId || "").trim();
+      if (!courseId) return;
+      quizCounts.set(courseId, (quizCounts.get(courseId) || 0) + 1);
+    });
+
+    const data = courses
+      .map((course) => mapCourseForAdmin(course, lessonCounts, quizCounts))
+      .filter((course) => course.id);
+
+    return res.json({ courses: data });
+  } catch (err) {
+    console.error("Failed to load admin courses:", err);
     return res.status(500).json({ message: "Server error" });
   }
 });
@@ -698,15 +756,13 @@ router.get("/admin/courses", adminAuth, async (_req, res) => {
 router.get("/admin/lessons", adminAuth, async (_req, res) => {
   try {
     const lessons = await Lesson.find({}).sort({ title: 1 });
-    const data = lessons.map((lesson) => ({
-      id: lesson.lessonId,
-      title: lesson.title,
-      courseId: lesson.courseId,
-      summary: lesson.summary || "",
-      videoUrl: lesson.videoUrl || ""
-    }));
-    res.json({ lessons: data });
-  } catch (_err) {
+    const data = lessons
+      .map((lesson) => mapLessonForAdmin(lesson))
+      .filter((lesson) => lesson.id);
+
+    return res.json({ lessons: data });
+  } catch (err) {
+    console.error("Failed to load admin lessons:", err);
     return res.status(500).json({ message: "Server error" });
   }
 });
