@@ -375,10 +375,16 @@ Scenario: ..."></textarea>
                 <code style="background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 0.25rem;">Q: Question text<br>A: Option A<br>B: Option B<br>C: Option C<br>D: Option D<br>Answer: A</code></p>
                 <form id="upload-form">
                     <div class="form-group">
-                        <label class="form-label">Lesson Title</label>
-                        <input type="text" name="lessonTitle" class="form-input"
-                            placeholder="e.g., Dental Materials Basics" required>
-                        <small style="color: #6b7280;">If lesson doesn't exist, it will be created automatically</small>
+                        <label class="form-label">Select Lesson</label>
+                        <select name="lessonId" id="upload-lesson-select" class="form-select" required>
+                            <option value="">Loading lessons...</option>
+                        </select>
+                        <small style="color: #6b7280;">Quizzes are saved under the selected lesson (same as manual quiz creation).</small>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Quiz Title (optional)</label>
+                        <input type="text" name="quizTitle" class="form-input"
+                            placeholder="Defaults to lesson title if left blank">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Quiz File</label>
@@ -1007,10 +1013,14 @@ Scenario: ..."></textarea>
                
                    const data = await res.json();
                 const select = document.getElementById("quiz-lesson-select");
+                const uploadSelect = document.getElementById("upload-lesson-select");
                 const list = document.getElementById("lessons-list");
                 lessonsCache = Array.isArray(data.lessons) ? data.lessons : [];
 
-                select.innerHTML = '<option value="">Select a lesson</option>';
+                const lessonSelects = [select, uploadSelect].filter(Boolean);
+                lessonSelects.forEach((el) => {
+                    el.innerHTML = '<option value="">Select a lesson</option>';
+                });
                 list.innerHTML = "";
 
                 if (data.lessons && Array.isArray(data.lessons)) {
@@ -1018,14 +1028,16 @@ Scenario: ..."></textarea>
                        const noOption = document.createElement("option");
                        noOption.disabled = true;
                        noOption.textContent = "No lessons available - Create one first";
-                       select.appendChild(noOption);
+                       lessonSelects.forEach((el) => el.appendChild(noOption.cloneNode(true)));
                        list.innerHTML = '<div class="p-3 bg-white border border-gray-200 rounded shadow-sm text-gray-500">No lessons available yet.</div>';
                    } else {
                    data.lessons.forEach(l => {
-                           const option = document.createElement("option");
-                           option.value = l.id || l.lessonId;
-                           option.textContent = l.title || "Untitled Lesson";
-                           select.appendChild(option);
+                           lessonSelects.forEach((el) => {
+                               const option = document.createElement("option");
+                               option.value = l.id || l.lessonId;
+                               option.textContent = l.title || "Untitled Lesson";
+                               el.appendChild(option);
+                           });
 
                            const lessonCard = document.createElement("div");
                            lessonCard.className = "p-3 bg-white border border-gray-200 rounded shadow-sm flex justify-between items-center gap-4";
@@ -1245,8 +1257,14 @@ Scenario: ..."></textarea>
         document.getElementById("upload-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const btn = e.target.querySelector("button");
-            const lessonTitle = e.target.lessonTitle.value;
+            const lessonId = e.target.lessonId.value;
+            const quizTitle = e.target.quizTitle?.value?.trim() || "";
             const fileInput = e.target.querySelector("input[type='file']");
+
+            if (!lessonId) {
+                showMessage(generalMsg, "Please select a lesson", "error");
+                return;
+            }
             
             if (!fileInput.files.length) {
                 showMessage(generalMsg, "Please select a file", "error");
@@ -1254,7 +1272,10 @@ Scenario: ..."></textarea>
             }
 
             const formData = new FormData();
-            formData.append("lessonTitle", lessonTitle);
+            formData.append("lessonId", lessonId);
+            if (quizTitle) {
+                formData.append("quizTitle", quizTitle);
+            }
             formData.append("file", fileInput.files[0]);
 
             setLoading(btn, true);

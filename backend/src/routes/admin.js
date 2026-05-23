@@ -1672,54 +1672,40 @@ router.post("/admin/quiz/upload", adminAuth, quizUpload.single("file"), async (r
       parsed = parseQuizCsv(text);
     }
 
-    let { lessonTitle, questions } = parsed;
-    if (req.body.lessonTitle) {
-      lessonTitle = req.body.lessonTitle;
-    }
+    const { questions } = parsed;
+    const lessonId = String(req.body.lessonId || "").trim();
+    const quizTitle = String(req.body.quizTitle || req.body.lessonTitle || parsed.lessonTitle || "").trim();
 
-    if (!lessonTitle) {
-      return res.status(400).json({ message: "Lesson title is missing" });
+    if (!lessonId) {
+      return res.status(400).json({ message: "lessonId is required — select an existing lesson" });
     }
     if (!questions.length) {
-      return res.status(400).json({ message: "No questions found" });
+      return res.status(400).json({ message: "No questions found in file" });
     }
 
-    let lesson = await Lesson.findOne({ title: lessonTitle });
+    const lesson = await Lesson.findOne({ lessonId });
     if (!lesson) {
-      const courseId = "course_general";
-      if (!await Course.findOne({ courseId })) {
-        await Course.findOneAndUpdate(
-          { courseId },
-          { courseId, title: "General Course", description: "General lesson and quiz bank", category: "General", curriculumTags: ["General"] },
-          { new: true, upsert: true }
-        );
-      }
-
-      const newLessonId = `lesson_${normalizeId(lessonTitle)}`;
-      lesson = await Lesson.findOneAndUpdate(
-        { lessonId: newLessonId },
-        {
-          lessonId: newLessonId,
-          courseId,
-          title: lessonTitle,
-          summary: "Quiz-only lesson created from bulk upload.",
-          videoUrl: "",
-          videoType: null,
-          audioItems: [],
-          materials: [],
-          caseStudies: [],
-          quizId: `quiz_${normalizeId(newLessonId)}`
-        },
-        { new: true, upsert: true }
-      );
+      return res.status(404).json({ message: "Selected lesson not found" });
     }
+
+    const resolvedQuizTitle = quizTitle || lesson.title || "Quiz";
 
     const quizId = lesson.quizId || `quiz_${normalizeId(lesson.lessonId)}`;
     const quiz = await Quiz.findOneAndUpdate(
       { quizId },
-      { quizId, courseId: lesson.courseId, lessonId: lesson.lessonId, title: lessonTitle, questions },
+      {
+        quizId,
+        courseId: lesson.courseId,
+        lessonId: lesson.lessonId,
+        title: resolvedQuizTitle,
+        questions
+      },
       { new: true, upsert: true }
     );
+
+    if (!lesson.quizId) {
+      await Lesson.findOneAndUpdate({ lessonId: lesson.lessonId }, { quizId });
+    }
 
     return res.status(201).json({
       quiz: {
